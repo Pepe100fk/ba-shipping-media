@@ -1,0 +1,55 @@
+name: Publicar medios aprobados desde ZIP
+
+on:
+  push:
+    paths:
+      - '.github/workflows/extraer-medios-aprobados.yml'
+      - 'BA_Shipping_Aprobadas_12-13-16_nov.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extraer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extraer solamente archivos multimedia finales
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          source = Path('BA_Shipping_Aprobadas_12-13-16_nov.zip')
+          prefix = 'BA_Shipping_Aprobadas_12-13-16_nov/SUBIR_A_GITHUB/'
+          allowed = {'.png', '.mp4', '.jpg', '.jpeg', '.webp'}
+          count = 0
+          with ZipFile(source) as z:
+              for entry in z.infolist():
+                  name = entry.filename
+                  if entry.is_dir() or not name.startswith(prefix):
+                      continue
+                  relative = Path(name[len(prefix):])
+                  if relative.is_absolute() or '..' in relative.parts or relative.suffix.lower() not in allowed:
+                      raise ValueError('Ruta no permitida: ' + name)
+                  if len(relative.parts) != 3 or relative.parts[0] not in {'2026-11-12','2026-11-13','2026-11-16'}:
+                      raise ValueError('Ruta inesperada: ' + name)
+                  dest = Path.cwd() / relative
+                  dest.parent.mkdir(parents=True, exist_ok=True)
+                  dest.write_bytes(z.read(entry))
+                  count += 1
+          if count != 14:
+              raise ValueError(f'Se esperaban 14 archivos multimedia, se encontraron {count}')
+          print(f'Archivos multimedia extraídos: {count}')
+          PY
+      - name: Confirmar archivos públicos en GitHub
+        shell: bash
+        run: |
+          git config user.name "BA Shipping Media"
+          git config user.email "actions@users.noreply.github.com"
+          git add 2026-11-12/ 2026-11-13/ 2026-11-16/
+          if ! git diff --cached --quiet; then
+            git commit -m "Add approved BA Shipping Instagram media 12, 13 and 16 Nov"
+            git push
+          fi
